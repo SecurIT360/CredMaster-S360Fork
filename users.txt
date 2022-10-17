@@ -1,1 +1,4 @@
-tester12345678@gmail.com
+fake
+exchadmin
+eureka\exchadmin
+exchadmin@eureka.local

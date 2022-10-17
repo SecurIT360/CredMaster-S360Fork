@@ -38,14 +38,20 @@ def get_owa_domain(url, uri, useragent):
     auth_header = {
         "Authorization": "NTLM TlRMTVNTUAABAAAAB4IIogAAAAAAAAAAAAAAAAAAAAAGAbEdAAAADw==",
         'User-Agent': useragent,
-        "X-My-X-Forwarded-For" : generate_ip(),
         "x-amzn-apigateway-api-id" : generate_id(),
         "X-My-X-Amzn-Trace-Id" : generate_trace_id(),
+        "X-My-X-Forwarded-For" : generate_ip()
     }
 
+
     r = requests.post("{url}{uri}".format(url=url,uri=uri), headers=auth_header, verify=False)
+
     if r.status_code == 401:
+        ''' ** Having trouble getting the x-amzn-remapped-www-authenticate header to work
+            ** www-authenticate gets us what we want - not sure of implications of this
         ntlm_info = ntlmdecode(r.headers["x-amzn-Remapped-WWW-Authenticate"])
+        '''
+        ntlm_info = ntlmdecode(r.headers["WWW-Authenticate"])
         return ntlm_info["NetBIOS_Domain_Name"]
     else:
         return "NOTFOUND"
