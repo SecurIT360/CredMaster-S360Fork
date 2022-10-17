@@ -1,4 +1,0 @@
-fake
-exchadmin
-eureka\exchadmin
-exchadmin@eureka.local
