@@ -121,6 +121,8 @@ class CredMaster(object):
 		if self.profile_name is not None and (self.access_key is not None or self.secret_access_key is not None):
 			self.log_entry("Cannot use a passed profile and keys")
 			return
+		if self.plugin == 'ews' or self.plugin == 'adfs':
+			return
 		if self.access_key is not None and self.secret_access_key is None:
 			self.log_entry("access_key requires secret_access_key")
 			return
@@ -130,7 +132,6 @@ class CredMaster(object):
 		if self.access_key is None and self.secret_access_key is None and self.session_token is None and self.profile_name is None:
 			self.log_entry("Cannot derive valid AWS authentication from passed options!")
 			return
-
 
 	def do_input_error_handling(self):
 
@@ -159,9 +160,10 @@ class CredMaster(object):
 			sys.exit()
 
 		# AWS Key Handling
-		if self.access_key is None and self.secret_access_key is None and self.session_token is None and self.profile_name is None:
-			self.log_entry("No FireProx access arguments settings configured, add access keys/session token or fill out config file")
-			sys.exit()
+		if self.plugin != 'ews' and self.plugin != 'adfs':	
+			if self.access_key is None and self.secret_access_key is None and self.session_token is None and self.profile_name is None:
+				self.log_entry("No FireProx access arguments settings configured, add access keys/session token or fill out config file")
+				sys.exit()
 
 		# Region handling
 		if self.region is not None and self.region not in self.regions:
@@ -239,22 +241,14 @@ class CredMaster(object):
 		use_fireprox = True
 		try:
 
-			# If plugin = EWS don't use fireprox for now
-			if plugin == 'ews':
+			# If plugin = EWS or ADFS don't use fireprox for now
+			if plugin == 'ews' or plugin == 'adfs':
 				use_fireprox = False
-				self.log_entry("[!] EWS plugin selected, not using fireprox for now...")
-				# print(use_fireprox)
-				# sys.exit()
+				self.log_entry("[!] EWS or ADFS plugin selected, not using fireprox for now...")
 
 				# do test connection / fingerprint
 				useragent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:59.0) Gecko/20100101 Firefox/59.0"
-				# connect_success, testconnect_output, pluginargs = validator.testconnect(pluginargs, args, url, useragent)
-				# self.log_entry(testconnect_output)
 
-				# if not connect_success:
-				#	sys.exit()
-
-				# Print stats
 				self.display_stats(True, use_fireprox)
 
 				self.log_entry("Starting Spray...")
